@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Every user can only read/write their OWN data (under users/{their-uid}/...)
+    // This is what keeps each person's customers and entries completely private.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /customers/{customerId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+
+        match /entries/{entryId} {
+          allow read, write: if request.auth != null && request.auth.uid == userId;
+        }
+      }
+    }
+  }
+}

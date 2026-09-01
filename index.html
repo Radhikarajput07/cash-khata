@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>CashKhata</title>
+<meta name="theme-color" content="#115e59" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="CashKhata" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icon-192.png" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { darkMode: "class" };
+</script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+<!-- Firebase (Auth + Firestore) -->
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<style>
+  html, body { overscroll-behavior-y: contain; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  ::-webkit-scrollbar { display: none; }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-top { padding-top: env(safe-area-inset-top); }
+  input:focus { outline: none; }
+</style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 transition-colors duration-200">
+
+<div class="max-w-md mx-auto min-h-screen bg-slate-50 dark:bg-slate-900 shadow-xl relative flex flex-col safe-top">
+
+  <div id="topbar" class="flex items-center justify-between px-5 py-2 hidden">
+    <div id="lang-pills" class="flex items-center gap-1 rounded-full border border-slate-200 dark:border-slate-700 p-0.5"></div>
+    <div class="flex items-center gap-1">
+      <button id="logout-btn" onclick="doLogout()" aria-label="Logout"
+        class="w-8 h-8 rounded-full flex items-center justify-center border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-150 active:scale-90">
+        <i data-lucide="log-out" class="w-4 h-4"></i>
+      </button>
+      <button id="theme-toggle" aria-label="Toggle dark mode"
+        class="w-8 h-8 rounded-full flex items-center justify-center border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-150 active:scale-90">
+        <i data-lucide="moon" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <div id="app" class="flex-1 flex flex-col"></div>
+</div>
+
+<!-- Add Customer Modal -->
+<div id="modal-add-customer" class="fixed inset-0 bg-black/50 hidden items-end justify-center z-30">
+  <div class="w-full max-w-md mx-auto rounded-t-3xl px-5 pt-5 pb-6 bg-white dark:bg-slate-800 safe-bottom">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="ac-title" class="text-base font-semibold text-slate-800 dark:text-slate-100"></h3>
+      <button onclick="history.back()" class="rounded-full p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-150 active:scale-90">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+    <label id="ac-name-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+    <input id="ac-name" autofocus class="w-full rounded-xl px-3.5 py-2.5 text-sm mb-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+    <label id="ac-phone-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+    <input id="ac-phone" inputmode="numeric" placeholder="98765 43210" class="w-full rounded-xl px-3.5 py-2.5 text-sm mb-1 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+    <div id="ac-error" class="text-rose-600 text-xs mt-1 mb-2 hidden"></div>
+    <button onclick="submitAddCustomer()" id="ac-save" class="w-full bg-gradient-to-r from-teal-800 to-teal-700 hover:from-teal-700 hover:to-teal-600 text-white rounded-xl py-3 font-semibold text-sm mt-4 shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98] active:brightness-90 hover:-translate-y-0.5 disabled:opacity-60 disabled:pointer-events-none"></button>
+  </div>
+</div>
+
+<!-- Entry Modal -->
+<div id="modal-entry" class="fixed inset-0 bg-black/50 hidden items-end justify-center z-30">
+  <div class="w-full max-w-md mx-auto rounded-t-3xl px-5 pt-5 pb-6 bg-white dark:bg-slate-800 safe-bottom max-h-[92vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="entry-title" class="text-base font-semibold text-slate-800 dark:text-slate-100"></h3>
+      <button onclick="history.back()" class="rounded-full p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all duration-150 active:scale-90">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <div id="entry-customer-field" class="mb-3 relative hidden">
+      <label id="entry-customer-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+      <input id="entry-customer-name" oninput="onCustomerNameInput()" onfocus="onCustomerNameFocus()" onblur="onCustomerNameBlur()"
+        class="w-full rounded-xl px-3.5 py-2.5 text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+      <div id="entry-customer-suggestions" class="absolute z-10 left-0 right-0 mt-1 rounded-xl border shadow-lg overflow-hidden bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hidden"></div>
+    </div>
+
+    <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-3 mb-3">
+      <div class="text-right mb-2 min-h-[2.5rem]">
+        <div id="entry-calc-display" class="text-2xl font-semibold break-all"></div>
+        <div id="entry-calc-preview" class="text-xs text-slate-400 dark:text-slate-500 hidden"></div>
+      </div>
+      <div id="entry-calc-keys" class="grid grid-cols-4 gap-1.5"></div>
+    </div>
+    <div id="entry-error" class="text-rose-600 text-xs mb-3 hidden"></div>
+
+    <div class="flex gap-2 mb-3">
+      <button id="entry-mode-cash" onclick="setEntryMode('cash')" class="flex-1 rounded-xl py-2.5 text-sm font-semibold border transition-all duration-200 active:scale-95"></button>
+      <button id="entry-mode-online" onclick="setEntryMode('online')" class="flex-1 rounded-xl py-2.5 text-sm font-semibold border transition-all duration-200 active:scale-95"></button>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2 mb-3">
+      <div>
+        <label id="entry-date-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+        <input id="entry-date" type="date" class="w-full rounded-xl px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+      </div>
+      <div>
+        <label id="entry-bill-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+        <input id="entry-bill" class="w-full rounded-xl px-3 py-2.5 text-sm border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+      </div>
+    </div>
+
+    <label id="entry-note-label" class="text-xs font-medium mb-1 block text-slate-500 dark:text-slate-400"></label>
+    <input id="entry-note" class="w-full rounded-xl px-3.5 py-2.5 text-sm mb-1 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 transition-colors duration-150" />
+
+    <button onclick="submitEntry()" id="entry-save" class="w-full rounded-xl py-3 font-semibold text-sm mt-4 text-white flex items-center justify-center gap-2 transition-all duration-200 active:scale-[0.98]"></button>
+  </div>
+</div>
+
+<script src="/firebase-config.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
