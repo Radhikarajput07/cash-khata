@@ -35,6 +35,8 @@ const STRINGS = {
   amountErr: { en: "Enter a valid amount", hi: "\u0938\u0939\u0940 \u0930\u093E\u0936\u093F \u0921\u093E\u0932\u0947\u0902", hg: "Sahi amount daalein" },
   loading: { en: "Loading your ledger...", hi: "\u0906\u092A\u0915\u093E \u0916\u093E\u0924\u093E \u0932\u094B\u0921 \u0939\u094B \u0930\u0939\u093E \u0939\u0948...", hg: "Aapka khata load ho raha hai..." },
   deleteEntry: { en: "Delete entry", hi: "\u090F\u0902\u091F\u094D\u0930\u0940 \u0939\u091F\u093E\u090F\u0902", hg: "Entry delete karein" },
+  editEntry: { en: "Edit entry", hi: "\u090F\u0902\u091F\u094D\u0930\u0940 \u090F\u0921\u093F\u091F \u0915\u0930\u0947\u0902", hg: "Entry edit karein" },
+  updateEntry: { en: "Update entry", hi: "\u090F\u0902\u091F\u094D\u0930\u0940 \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902", hg: "Entry update karein" },
   today: { en: "Today", hi: "\u0906\u091C", hg: "Aaj" },
   yesterday: { en: "Yesterday", hi: "\u0915\u0932", hg: "Kal" },
   todayReceived: { en: "Received today", hi: "\u0906\u091C \u092E\u093F\u0932\u0947", hg: "Aaj mile" },
@@ -170,6 +172,10 @@ let currentUid = null;
 // Keep the user logged in across visits/devices until they explicitly log out.
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 async function signInWithGoogle() {
   if (state.authSubmitting) return;
   state.authSubmitting = true;
@@ -177,14 +183,29 @@ async function signInWithGoogle() {
   renderAll();
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
-    // onAuthStateChanged handles the rest
+    if (isMobileDevice()) {
+      // Popups are unreliable on mobile browsers (often blocked or loop back
+      // to the same page) - redirect flow works far more consistently there.
+      await auth.signInWithRedirect(provider);
+      // Page navigates away here; result is handled by getRedirectResult() below
+      // once the user returns.
+    } else {
+      await auth.signInWithPopup(provider);
+      // onAuthStateChanged handles the rest
+    }
   } catch (e) {
     state.authError = e.message || t("authErr");
     state.authSubmitting = false;
     renderAll();
   }
 }
+
+// Catch the result when the browser returns from a redirect-based sign-in.
+auth.getRedirectResult().catch((e) => {
+  state.authError = e.message || t("authErr");
+  state.authSubmitting = false;
+  renderAll();
+});
 
 // ---------------- Auth ----------------
 auth.onAuthStateChanged(async (user) => {
@@ -296,6 +317,13 @@ async function addEntryFS(customerId, entry) {
 async function deleteEntryFS(customerId, entryId) {
   await db.collection("users").doc(currentUid).collection("customers").doc(customerId).collection("entries").doc(entryId).delete();
   state.entries[customerId] = (state.entries[customerId] || []).filter((e) => e.id !== entryId);
+}
+
+async function updateEntryFS(customerId, entryId, updatedFields) {
+  await db.collection("users").doc(currentUid).collection("customers").doc(customerId).collection("entries").doc(entryId).update(updatedFields);
+  const list = state.entries[customerId] || [];
+  const idx = list.findIndex((e) => e.id === entryId);
+  if (idx !== -1) list[idx] = { ...list[idx], ...updatedFields };
 }
 
 async function resolveOrCreateCustomer(nameInput) {
@@ -755,6 +783,10 @@ function renderEntryRow(customerId, e) {
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <span class="text-sm font-semibold ${e.type === "gave" ? "text-rose-600" : "text-emerald-600"}">${e.type === "gave" ? "\u2212" : "+"} ${fmtMoney(e.amount)}</span>
+        <button onclick='openEditEntry(${JSON.stringify(customerId)},${JSON.stringify(e.id)})' aria-label="${esc(t("editEntry"))}"
+          class="w-7 h-7 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 text-slate-400 hover:text-teal-600 transition-all duration-150 active:scale-90 hover:bg-slate-100 dark:hover:bg-slate-700">
+          <i data-lucide="pencil" class="w-[14px] h-[14px]"></i>
+        </button>
         <button onclick="deleteEntry('${customerId}','${e.id}')" aria-label="${esc(t("deleteEntry"))}"
           class="w-7 h-7 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 text-slate-400 hover:text-rose-500 transition-all duration-150 active:scale-90 hover:bg-slate-100 dark:hover:bg-slate-700">
           <i data-lucide="x" class="w-[15px] h-[15px]"></i>
@@ -884,6 +916,10 @@ function renderCashbookView() {
               </button>
               <div class="flex items-center gap-2 shrink-0">
                 <span class="text-sm font-semibold ${e.type === "gave" ? "text-rose-600" : "text-emerald-600"}">${e.type === "gave" ? "\u2212" : "+"} ${fmtMoney(e.amount)}</span>
+                <button onclick='openEditEntry(${JSON.stringify(e.customerId)},${JSON.stringify(e.id)})' aria-label="${esc(t("editEntry"))}"
+                  class="w-7 h-7 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all duration-150 active:scale-90 text-slate-400 hover:text-teal-600 hover:bg-slate-100 dark:hover:bg-slate-700">
+                  <i data-lucide="pencil" class="w-[14px] h-[14px]"></i>
+                </button>
                 <button onclick="deleteEntry('${e.customerId}','${e.id}')" aria-label="${esc(t("deleteEntry"))}"
                   class="w-7 h-7 rounded-full flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all duration-150 active:scale-90 text-slate-400 hover:text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-700">
                   <i data-lucide="x" class="w-[15px] h-[15px]"></i>
@@ -1011,14 +1047,20 @@ async function submitAddCustomer() {
   }
 }
 
-function openEntry(customerId, type) {
-  entryContext = { customerId, type };
-  calcExpr = "";
+function openEditEntry(customerId, entryId) {
+  const entry = (state.entries[customerId] || []).find((e) => e.id === entryId);
+  if (!entry) return;
+  openEntry(customerId, entry.type, entry);
+}
+
+function openEntry(customerId, type, existingEntry) {
+  entryContext = { customerId, type, editEntryId: existingEntry ? existingEntry.id : null };
+  calcExpr = existingEntry ? String(existingEntry.amount) : "";
   const isGave = type === "gave";
   const customer = customerId ? state.customers.find((c) => c.id === customerId) : null;
 
   document.getElementById("entry-title").innerHTML =
-    `${esc(isGave ? t("youGave") : t("youGot"))}` +
+    `${esc(existingEntry ? t("editEntry") : (isGave ? t("youGave") : t("youGot")))}` +
     (customerId ? ` <span class="font-normal text-slate-500 dark:text-slate-400">\u2014 ${esc(customer?.name || "")}</span>` : "");
 
   const custField = document.getElementById("entry-customer-field");
@@ -1033,22 +1075,24 @@ function openEntry(customerId, type) {
   }
 
   document.getElementById("entry-error").classList.add("hidden");
-  document.getElementById("entry-date").value = new Date().toISOString().slice(0, 10);
+  document.getElementById("entry-date").value = existingEntry
+    ? new Date(existingEntry.ts).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
   document.getElementById("entry-date-label").textContent = t("date");
   document.getElementById("entry-bill-label").textContent = t("billNumber");
   document.getElementById("entry-bill").placeholder = t("billNumberPlaceholder");
-  document.getElementById("entry-bill").value = "";
-  document.getElementById("entry-note").value = "";
+  document.getElementById("entry-bill").value = existingEntry ? (existingEntry.billNumber || "") : "";
+  document.getElementById("entry-note").value = existingEntry ? (existingEntry.note || "") : "";
   document.getElementById("entry-note-label").textContent = t("noteOptional");
   document.getElementById("entry-note").placeholder = t("notePlaceholder");
 
   const saveBtn = document.getElementById("entry-save");
   saveBtn.className = "w-full rounded-xl py-3 font-semibold text-sm mt-4 text-white flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all duration-200 active:scale-[0.98] active:brightness-90 hover:-translate-y-0.5 " + (isGave ? "bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600" : "bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600");
-  saveBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> ${esc(t("saveEntry"))}`;
+  saveBtn.innerHTML = `<i data-lucide="check" class="w-4 h-4"></i> ${esc(existingEntry ? t("updateEntry") : t("saveEntry"))}`;
 
   renderCalcKeys();
   updateCalcDisplay(isGave);
-  setEntryMode("cash");
+  setEntryMode(existingEntry ? existingEntry.mode : "cash");
 
   const modal = document.getElementById("modal-entry");
   modal.classList.remove("hidden");
@@ -1210,7 +1254,11 @@ async function submitEntry() {
     const cameFromCashbook = !targetId;
     if (!targetId) targetId = await resolveOrCreateCustomer(customerNameInput);
 
-    await addEntryFS(targetId, { type: entryContext.type, mode: entryMode, amount: val, note, billNumber, ts });
+    if (entryContext.editEntryId) {
+      await updateEntryFS(targetId, entryContext.editEntryId, { type: entryContext.type, mode: entryMode, amount: val, note, billNumber, ts });
+    } else {
+      await addEntryFS(targetId, { type: entryContext.type, mode: entryMode, amount: val, note, billNumber, ts });
+    }
     closeEntry();
     if (cameFromCashbook) {
       state.activeId = targetId;
@@ -1241,6 +1289,7 @@ window.openAddCustomer = openAddCustomer;
 window.closeAddCustomer = closeAddCustomer;
 window.submitAddCustomer = submitAddCustomer;
 window.openEntry = openEntry;
+window.openEditEntry = openEditEntry;
 window.closeEntry = closeEntry;
 window.setEntryMode = setEntryMode;
 window.submitEntry = submitEntry;
@@ -1256,6 +1305,7 @@ window.goBack = goBack;
 window.setAuthMode = setAuthMode;
 window.submitAuth = submitAuth;
 window.doLogout = doLogout;
+window.signInWithGoogle = signInWithGoogle;
 
 // ---------------- Init ----------------
 renderAll();
